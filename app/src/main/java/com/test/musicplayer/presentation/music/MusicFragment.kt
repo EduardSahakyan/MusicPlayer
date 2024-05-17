@@ -12,6 +12,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -22,6 +23,7 @@ import com.test.musicplayer.domain.Music
 import com.test.musicplayer.presentation.music.adapter.MusicAdapterCallback
 import com.test.musicplayer.presentation.music.adapter.MusicListAdapter
 import com.test.musicplayer.presentation.services.MusicService
+import com.test.musicplayer.presentation.services.MusicServiceCallback
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -39,18 +41,42 @@ class MusicFragment: Fragment() {
     private var mService: MusicService? = null
     private var mBound: Boolean = false
 
+    private val musicServiceCallback = object : MusicServiceCallback {
+        override fun onStop() {
+            binding.musicStatusBar.visibility = View.GONE
+        }
+
+        override fun onPause(isPaused: Boolean) {
+            if (isPaused) {
+                binding.playPauseBtn.setImageDrawable(ContextCompat.getDrawable(requireContext(), android.R.drawable.ic_media_play))
+            } else {
+                binding.playPauseBtn.setImageDrawable(ContextCompat.getDrawable(requireContext(), android.R.drawable.ic_media_pause))
+            }
+        }
+
+        override fun onTrackChange(music: Music) {
+            binding.apply {
+                musicStatusBar.visibility = View.VISIBLE
+                songTitle.text = music.title
+            }
+        }
+    }
+
     private val connection = object : ServiceConnection {
 
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
             val binder = service as MusicService.LocalBinder
             mService = binder.getService()
             mBound = true
+            mService?.setupServiceCallback(musicServiceCallback)
+            mService?.setupMusic(viewModel.state.value.music)
             currentMusic?.let {
                 mService?.play(it)
             }
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
+            mService?.setupServiceCallback(null)
             mService = null
             mBound = false
         }
@@ -83,6 +109,7 @@ class MusicFragment: Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        listeners()
         setupAdapter()
         observers()
         permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -100,6 +127,21 @@ class MusicFragment: Fragment() {
         binding.apply {
             rvMusic.layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.VERTICAL, false)
             rvMusic.adapter = musicAdapter
+        }
+    }
+
+    private fun listeners() = with(binding) {
+        closeAudioBtn.setOnClickListener {
+            mService?.stop()
+        }
+        nextBtn.setOnClickListener {
+            mService?.next()
+        }
+        prvBtn.setOnClickListener {
+            mService?.prev()
+        }
+        playPauseBtn.setOnClickListener {
+            mService?.pause()
         }
     }
 
